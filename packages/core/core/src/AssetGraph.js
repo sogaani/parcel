@@ -42,8 +42,9 @@ export function nodeFromDep(dep: Dependency): DependencyNode {
     type: 'dependency',
     value: dep,
     deferred: false,
-    usedSymbols: new Set(),
-    usedSymbolsDirty: false,
+    usedSymbolsDown: new Set(),
+    usedSymbolsUp: new Set(),
+    usedSymbolsDownDirty: false,
   };
 }
 
@@ -171,7 +172,7 @@ export default class AssetGraph extends Graph<AssetGraphNode> {
       );
       if (target.env.isLibrary) {
         // in library mode, all of the entry's symbols are "used"
-        node.usedSymbols.add('*');
+        node.usedSymbolsDown.add('*');
       }
       return node;
     });
@@ -207,7 +208,7 @@ export default class AssetGraph extends Graph<AssetGraphNode> {
     child: AssetGraphNode,
     wasVisited: boolean,
   ): ?boolean {
-    if (child.type === 'dependency' && child.usedSymbolsDirty) return true;
+    if (child.type === 'dependency' && child.usedSymbolsDownDirty) return true;
 
     if (node.type === 'dependency' && child.type === 'asset_group') {
       let dependency = node;
@@ -220,11 +221,11 @@ export default class AssetGraph extends Graph<AssetGraphNode> {
     if (
       parent &&
       parent.type === 'dependency' &&
-      parent.usedSymbolsDirty &&
+      parent.usedSymbolsDownDirty &&
       node.type === 'asset_group' &&
       child.type === 'asset'
     ) {
-      parent.usedSymbolsDirty = false;
+      parent.usedSymbolsDownDirty = false;
       let outgoingDepsChanged = this.setUsedSymbolsAsset(
         child,
         this.getNodesConnectedFrom(child).map(dep => {
@@ -245,7 +246,7 @@ export default class AssetGraph extends Graph<AssetGraphNode> {
     dependency: DependencyNode,
     sideEffects: ?boolean,
   ): boolean {
-    return !!(sideEffects === false && dependency.usedSymbols.size == 0);
+    return !!(sideEffects === false && dependency.usedSymbolsDown.size == 0);
 
     // TODO do we really want this?:
     // one module does `export * from './esm.js'`.
@@ -280,9 +281,9 @@ export default class AssetGraph extends Graph<AssetGraphNode> {
   ) {
     let hasDirtyOutgoingDep = false;
     function outgoingDepAddSymbol(dep, symbol) {
-      if (!dep.usedSymbols.has(symbol)) {
-        dep.usedSymbols.add(symbol);
-        dep.usedSymbolsDirty = true;
+      if (!dep.usedSymbolsDown.has(symbol)) {
+        dep.usedSymbolsDown.add(symbol);
+        dep.usedSymbolsDownDirty = true;
         hasDirtyOutgoingDep = true;
       }
     }
@@ -290,7 +291,7 @@ export default class AssetGraph extends Graph<AssetGraphNode> {
     let incomingDeps = this.getIncomingDependencies(assetNode.value).map(d => {
       let n = this.getNode(d.id);
       invariant(n && n.type === 'dependency');
-      n.usedSymbolsDirty = false;
+      n.usedSymbolsDownDirty = false;
       return n;
     });
 
@@ -316,7 +317,7 @@ export default class AssetGraph extends Graph<AssetGraphNode> {
       if (incomingDep.value.isEntry || incomingDep.value.isAsync)
         isEntry = true;
 
-      for (let exportSymbol of incomingDep.usedSymbols) {
+      for (let exportSymbol of incomingDep.usedSymbolsDown) {
         if (exportSymbol === '*') {
           // There is no point in continuing with the loop here, everything is used anyway.
           assetUsedSymbols = new Set(['*']);
@@ -395,6 +396,27 @@ export default class AssetGraph extends Graph<AssetGraphNode> {
 
     return hasDirtyOutgoingDep;
   }
+
+  // propagateUsedSymbolsUp(
+  //   incomingDeps: Map<string, DependencyNode>,
+  //   assetNode: AssetNode,
+  // ) {
+  // console.log(
+  //   assetNode.value.filePath,
+  //   [...incomingDeps.keys()],
+  //   assetNode.value.symbols,
+  //   assetNode.usedSymbols,
+  // );
+  // if (assetNode.value.symbols) {
+  //   for (let s of assetNode.usedSymbols) {
+  //     if (!assetNode.value.symbols.has(s)) {
+  //       console.log(s);
+  //       let d = incomingDeps.get(s);
+  //       console.log(d.value.sourcePath, d.value.moduleSpecifier);
+  //     }
+  //   }
+  // }
+  // }
 
   resolveAssetGroup(
     assetGroup: AssetGroup,
