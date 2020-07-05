@@ -4,6 +4,7 @@ import type {
   Asset,
   Bundle,
   BundleGroup,
+  Dependency,
   MutableBundleGraph,
   PluginOptions,
 } from '@parcel/types';
@@ -30,6 +31,19 @@ const HTTP_OPTIONS = {
   },
 };
 
+function shouldSkipDependencySubgraph(
+  bundleGraph: MutableBundleGraph,
+  dep: Dependency,
+) {
+  if (
+    !dep.symbols.isCleared &&
+    bundleGraph.getUsedSymbolsDependency(dep).size === 0
+  ) {
+    let assetGroup = bundleGraph.getDependencyResolution(dep);
+    return assetGroup && assetGroup.sideEffects === false;
+  }
+}
+
 export default new Bundler({
   // RULES:
   // 1. If dep.isAsync or dep.isEntry, start a new bundle group.
@@ -50,7 +64,7 @@ export default new Bundler({
 
     // Step 1: create bundles for each of the explicit code split points.
     bundleGraph.traverse({
-      enter: (node, context) => {
+      enter: (node, context, actions) => {
         if (node.type !== 'dependency') {
           return {
             ...context,
@@ -65,6 +79,19 @@ export default new Bundler({
         let dependency = node.value;
         let assets = bundleGraph.getDependencyAssets(dependency);
         let resolution = bundleGraph.getDependencyResolution(dependency);
+
+        if (shouldSkipDependencySubgraph(bundleGraph, node.value)) {
+          actions.skipChildren();
+          if (resolution) {
+            bundleGraph.removeAssetGraphFromBundle(
+              resolution,
+              nullthrows(
+                nullthrows(context?.bundleByType).get(resolution.type),
+              ),
+            );
+          }
+          return;
+        }
 
         // Create a new bundle for entries, async deps, isolated assets, and inline assets.
         if (
@@ -434,12 +461,17 @@ export default new Bundler({
     // the bundle and the bundle group providing that asset. If all connections
     // to that bundle group are removed, remove that bundle group.
     let asyncBundleGroups: Set<BundleGroup> = new Set();
-    bundleGraph.traverse(node => {
+    bundleGraph.traverse((node, _, actions) => {
       if (
         node.type !== 'dependency' ||
         node.value.isEntry ||
         !node.value.isAsync
       ) {
+        return;
+      }
+
+      if (shouldSkipDependencySubgraph(bundleGraph, node.value)) {
+        actions.skipChildren();
         return;
       }
 

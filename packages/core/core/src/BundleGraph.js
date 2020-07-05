@@ -154,6 +154,18 @@ export default class BundleGraph {
         return;
       }
 
+      if (
+        node.type === 'dependency' &&
+        node.value.symbols != null &&
+        node.usedSymbolsUp.size === 0
+      ) {
+        let assetGroup = this.getDependencyResolution(node.value);
+        if (assetGroup && assetGroup.sideEffects === false) {
+          actions.skipChildren();
+          return;
+        }
+      }
+
       if (node.type === 'asset' && !this.bundleHasAsset(bundle, node.value)) {
         bundle.stats.size += node.value.stats.size;
       }
@@ -881,9 +893,14 @@ export default class BundleGraph {
     let deps = this.getDependencies(asset).reverse();
     let potentialResults = [];
     for (let dep of deps) {
+      let depSymbols = dep.symbols;
+      if (!depSymbols) {
+        bailout = true;
+        continue;
+      }
       // If this is a re-export, find the original module.
       let symbolLookup = new Map(
-        [...dep.symbols].map(([key, val]) => [val.local, key]),
+        [...depSymbols].map(([key, val]) => [val.local, key]),
       );
       let depSymbol = symbolLookup.get(identifier);
       if (depSymbol != null) {
@@ -922,7 +939,7 @@ export default class BundleGraph {
 
       // If this module exports wildcards, resolve the original module.
       // Default exports are excluded from wildcard exports.
-      if (dep.symbols.get('*')?.local === '*' && symbol !== 'default') {
+      if (depSymbols.get('*')?.local === '*' && symbol !== 'default') {
         let resolved = this.getDependencyResolution(dep);
         if (!resolved) continue;
         let result = this.resolveSymbol(resolved, symbol, boundary);
@@ -1002,7 +1019,10 @@ export default class BundleGraph {
 
     let deps = this.getDependencies(asset);
     for (let dep of deps) {
-      if (dep.symbols.get('*')?.local === '*') {
+      let depSymbols = dep.symbols;
+      if (!depSymbols) continue;
+
+      if (depSymbols.get('*')?.local === '*') {
         let resolved = this.getDependencyResolution(dep);
         if (!resolved) continue;
         let exported = this.getExportedSymbols(resolved, boundary)
