@@ -57,7 +57,7 @@ export default async function dumpGraphToGraphViz(
       if (node.value.isOptional) parts.push('optional');
       if (node.value.isIsolated) parts.push('isolated');
       if (node.value.isURL) parts.push('url');
-      if (node.deferred) parts.push('deferred');
+      if (node.hasDeferred) parts.push('deferred');
       if (parts.length) label += ' (' + parts.join(', ') + ')';
       if (node.value.env) label += ` (${getEnvDescription(node.value.env)})`;
       if (detailedSymbols) {
@@ -72,16 +72,12 @@ export default async function dumpGraphToGraphViz(
         if (weakSymbols.length) {
           label += '\nweakSymbols: ' + weakSymbols.join(',');
         }
-        let usedSymbolsDown = [...node.usedSymbolsDown]
-          .filter(([, v]) => v.size > 0)
-          .map(([v]) => v);
-        if (usedSymbolsDown.length) {
-          label += '\nusedSymbolsDown: ' + usedSymbolsDown.join(',');
+        if (node.usedSymbolsDown.size) {
+          label += '\nusedSymbolsDown: ' + [...node.usedSymbolsDown].join(',');
         }
         if (node.usedSymbolsUp.size) {
           label += '\nusedSymbolsUp: ' + [...node.usedSymbolsUp].join(',');
         }
-        if (node.usedSymbolsDownDirty) parts.push('\nusedSymbolsDirty');
       }
     } else if (node.type === 'asset') {
       label += path.basename(node.value.filePath) + '#' + node.value.type;
@@ -96,11 +92,8 @@ export default async function dumpGraphToGraphViz(
         } else {
           label += '\nsymbols: cleared';
         }
-        let usedSymbols = [...node.usedSymbols]
-          .filter(([, v]) => v.size > 0)
-          .map(([v]) => v);
-        if (usedSymbols.length) {
-          label += '\nusedSymbols: ' + usedSymbols.join(',');
+        if (node.usedSymbols.size) {
+          label += '\nusedSymbols: ' + [...node.usedSymbols].join(',');
         }
       }
     } else if (node.type === 'file') {

@@ -30,7 +30,6 @@ import type {
   HMROptions,
 } from '@parcel/types';
 
-import type {DefaultMap} from '@parcel/utils';
 import type {FileSystem} from '@parcel/fs';
 import type Cache from '@parcel/cache';
 import type {PackageManager} from '@parcel/package-manager';
@@ -190,7 +189,8 @@ export type AssetNode = {|
   id: string,
   +type: 'asset',
   value: Asset,
-  usedSymbols: DefaultMap<Symbol, Set<?string>>,
+  usedSymbols: Set<Symbol>,
+  hasDeferred?: boolean,
 |};
 
 export type DependencyNode = {|
@@ -200,8 +200,8 @@ export type DependencyNode = {|
   complete?: boolean,
   correspondingRequest?: string,
   deferred: boolean,
-  usedSymbolsDown: DefaultMap<Symbol, Set<?string>>,
-  usedSymbolsDownDirty: boolean,
+  hasDeferred?: boolean,
+  usedSymbolsDown: Set<Symbol>,
   usedSymbolsUp: Set<Symbol>,
 |};
 
@@ -226,6 +226,8 @@ export type AssetGroupNode = {|
   +type: 'asset_group',
   value: AssetGroup,
   correspondingRequest?: string,
+  deferred?: boolean,
+  hasDeferred?: boolean,
 |};
 
 export type DepPathRequestNode = {|
