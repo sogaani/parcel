@@ -8,8 +8,6 @@ import type {
 } from '@parcel/types';
 import type {Asset, Dependency} from '../types';
 
-import nullthrows from 'nullthrows';
-
 const EMPTY_ITERABLE = {
   [Symbol.iterator]() {
     return EMPTY_ITERATOR;
@@ -92,11 +90,21 @@ export class MutableAssetSymbols implements IMutableAssetSymbols {
     this.#value = asset;
   }
 
+  ensure(): void {
+    let symbols = this.#value.symbols;
+    if (this.#value.symbols == null) {
+      symbols = new Map();
+      this.#value.symbols = symbols;
+    }
+  }
+
   set(exportSymbol: ISymbol, local: ISymbol, loc: ?SourceLocation) {
-    nullthrows(
-      this.#value.symbols,
-      'Cannot set symbol on cleared Symbols',
-    ).set(exportSymbol, {local, loc});
+    let symbols = this.#value.symbols;
+    if (symbols == null) {
+      symbols = new Map();
+      this.#value.symbols = symbols;
+    }
+    symbols.set(exportSymbol, {local, loc});
   }
 
   get(exportSymbol: ISymbol): ?{|local: ISymbol, loc: ?SourceLocation|} {
@@ -155,22 +163,30 @@ export class MutableDependencySymbols implements IMutableDependencySymbols {
     this.#value = dep;
   }
 
+  ensure(): void {
+    let symbols = this.#value.symbols;
+    if (this.#value.symbols == null) {
+      symbols = new Map();
+      this.#value.symbols = symbols;
+    }
+  }
+
   set(
     exportSymbol: ISymbol,
     local: ISymbol,
     loc: ?SourceLocation,
     isWeak: ?boolean,
   ) {
-    nullthrows(this.#value.symbols, 'Cannot set symbol on cleared Symbols').set(
-      exportSymbol,
-      {
-        local,
-        loc,
-        isWeak:
-          (this.#value.symbols.get(exportSymbol)?.isWeak ?? true) &&
-          (isWeak ?? false),
-      },
-    );
+    let symbols = this.#value.symbols;
+    if (symbols == null) {
+      symbols = new Map();
+      this.#value.symbols = symbols;
+    }
+    symbols.set(exportSymbol, {
+      local,
+      loc,
+      isWeak: (symbols.get(exportSymbol)?.isWeak ?? true) && (isWeak ?? false),
+    });
   }
 
   get(

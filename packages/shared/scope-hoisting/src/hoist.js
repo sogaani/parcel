@@ -91,6 +91,8 @@ export function hoist(asset: MutableAsset, ast: AST) {
     throw new Error('Asset does not have a babel AST');
   }
 
+  asset.symbols.ensure();
+
   traverse(ast.program, VISITOR, null, asset);
   asset.setAST(ast);
 }
@@ -531,6 +533,8 @@ const VISITOR: Visitor<MutableAsset> = {
     let dep = asset
       .getDependencies()
       .find(dep => dep.moduleSpecifier === path.node.source.value);
+
+    if (dep) dep.symbols.ensure();
 
     // For each specifier, rename the local variables to point to the imported name.
     // This will be replaced by the final variable name of the resolved asset in the packager.

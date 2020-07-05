@@ -60,23 +60,29 @@ export default async function dumpGraphToGraphViz(
       if (node.hasDeferred) parts.push('deferred');
       if (parts.length) label += ' (' + parts.join(', ') + ')';
       if (node.value.env) label += ` (${getEnvDescription(node.value.env)})`;
+      let depSymbols = node.value.symbols;
       if (detailedSymbols) {
-        if (node.value.symbols.size) {
-          label +=
-            '\nsymbols: ' +
-            [...node.value.symbols].map(([e, {local}]) => [e, local]).join(';');
-        }
-        let weakSymbols = [...node.value.symbols]
-          .filter(([, {isWeak}]) => isWeak)
-          .map(([s]) => s);
-        if (weakSymbols.length) {
-          label += '\nweakSymbols: ' + weakSymbols.join(',');
-        }
-        if (node.usedSymbolsDown.size) {
-          label += '\nusedSymbolsDown: ' + [...node.usedSymbolsDown].join(',');
-        }
-        if (node.usedSymbolsUp.size) {
-          label += '\nusedSymbolsUp: ' + [...node.usedSymbolsUp].join(',');
+        if (depSymbols) {
+          if (depSymbols.size) {
+            label +=
+              '\nsymbols: ' +
+              [...depSymbols].map(([e, {local}]) => [e, local]).join(';');
+          }
+          let weakSymbols = [...depSymbols]
+            .filter(([, {isWeak}]) => isWeak)
+            .map(([s]) => s);
+          if (weakSymbols.length) {
+            label += '\nweakSymbols: ' + weakSymbols.join(',');
+          }
+          if (node.usedSymbolsDown.size) {
+            label +=
+              '\nusedSymbolsDown: ' + [...node.usedSymbolsDown].join(',');
+          }
+          if (node.usedSymbolsUp.size) {
+            label += '\nusedSymbolsUp: ' + [...node.usedSymbolsUp].join(',');
+          }
+        } else {
+          label += '\nsymbols: cleared';
         }
       }
     } else if (node.type === 'asset') {

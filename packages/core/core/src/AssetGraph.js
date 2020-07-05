@@ -169,6 +169,7 @@ export default class AssetGraph extends Graph<AssetGraphNode> {
         }),
       );
       if (target.env.isLibrary) {
+        node.value.symbols = node.value.symbols || new Map();
         // in library mode, all of the entry's symbols are "used"
         node.usedSymbolsDown.add('*');
       }
@@ -266,35 +267,39 @@ export default class AssetGraph extends Graph<AssetGraphNode> {
   // a huge number of functions since we can avoid even transforming the files that aren't used.
   shouldDeferDependency(dependency: Dependency, sideEffects: ?boolean) {
     let defer = false;
+    let dependencySymbols = dependency.symbols;
     if (
-      [...dependency.symbols].every(([, {isWeak}]) => isWeak) &&
+      dependencySymbols &&
+      [...dependencySymbols].every(([, {isWeak}]) => isWeak) &&
       sideEffects === false &&
-      !dependency.symbols.has('*') &&
-      // TODO these conditions? ("correctly handles ES6 re-exports in library mode entries")
-      !dependency.isEntry &&
-      !dependency.isIsolated
+      !dependencySymbols.has('*')
     ) {
       let depNode = this.getNode(dependency.id);
       invariant(depNode);
 
       let assets = this.getNodesConnectedTo(depNode);
       let symbols = new Map(
-        [...dependency.symbols].map(([key, val]) => [val.local, key]),
+        [...dependencySymbols].map(([key, val]) => [val.local, key]),
       );
       invariant(assets.length === 1);
       let firstAsset = assets[0];
-      invariant(firstAsset.type === 'asset');
-      let resolvedAsset = firstAsset.value;
-      let deps = this.getIncomingDependencies(resolvedAsset);
-      defer = deps.every(
-        d =>
-          !(d.env.isLibrary && d.isEntry) &&
-          !d.symbols.has('*') &&
-          ![...d.symbols.keys()].some(symbol => {
-            let assetSymbol = resolvedAsset.symbols?.get(symbol)?.local;
-            return assetSymbol != null && symbols.has(assetSymbol);
-          }),
-      );
+      if (firstAsset.type === 'entry_file') {
+        defer = false;
+      } else {
+        invariant(firstAsset.type === 'asset');
+        let resolvedAsset = firstAsset.value;
+        let deps = this.getIncomingDependencies(resolvedAsset);
+        defer = deps.every(
+          d =>
+            d.symbols &&
+            !(d.env.isLibrary && d.isEntry) &&
+            !d.symbols.has('*') &&
+            ![...d.symbols.keys()].some(symbol => {
+              let assetSymbol = resolvedAsset.symbols?.get(symbol)?.local;
+              return assetSymbol != null && symbols.has(assetSymbol);
+            }),
+        );
+      }
     }
     return defer;
   }

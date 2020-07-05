@@ -50,7 +50,7 @@ export function createDependency(opts: DependencyOpts): Dependency {
     isURL: opts.isURL ?? false,
     isIsolated: opts.isIsolated ?? false,
     meta: opts.meta || {},
-    symbols: opts.symbols || new Map(),
+    symbols: opts.symbols,
   };
 }
 
@@ -58,7 +58,9 @@ export function mergeDependencies(a: Dependency, b: Dependency): void {
   let {meta, symbols, ...other} = b;
   Object.assign(a, other);
   Object.assign(a.meta, meta);
-  for (let [k, v] of symbols) {
-    a.symbols.set(k, v);
+  if (a.symbols && symbols) {
+    for (let [k, v] of symbols) {
+      a.symbols.set(k, v);
+    }
   }
 }
