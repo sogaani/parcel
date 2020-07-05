@@ -856,6 +856,26 @@ describe('scope hoisting', function() {
       assert.deepEqual(output.foo, 'bar');
     });
 
+    it('should correctly handle circular dependencies', async function() {
+      let b = await bundle(
+        path.join(__dirname, '/integration/scope-hoisting/es6/circular/a.js'),
+      );
+
+      assert.deepStrictEqual(
+        b.getUsedSymbolsAsset(findAsset(b, 'b.js')),
+        new Set(['b']),
+      );
+
+      assert.deepStrictEqual(
+        b.getUsedSymbolsAsset(findAsset(b, 'c.js')),
+        new Set(['c']),
+      );
+
+      // TODO concat order is wrong?
+      // let output = await run(b);
+      // assert.deepEqual(output, 'c:b');
+    });
+
     it('does not tree-shake assignments to unknown objects', async () => {
       let b = await bundle(
         path.join(
@@ -933,9 +953,10 @@ describe('scope hoisting', function() {
           output = await run(bundleEvent.bundleGraph);
           assert.deepEqual(output, [123, 789]);
 
-          let assetC = nullthrows(findAsset(bundleEvent.bundleGraph, 'c.js'));
           assert.deepStrictEqual(
-            bundleEvent.bundleGraph.getUsedSymbolsAsset(assetC),
+            bundleEvent.bundleGraph.getUsedSymbolsAsset(
+              findAsset(bundleEvent.bundleGraph, 'c.js'),
+            ),
             new Set(['c']),
           );
 
@@ -949,9 +970,10 @@ describe('scope hoisting', function() {
           output = await run(bundleEvent.bundleGraph);
           assert.deepEqual(output, [123]);
 
-          assetC = nullthrows(findAsset(bundleEvent.bundleGraph, 'c.js'));
           assert.deepStrictEqual(
-            bundleEvent.bundleGraph.getUsedSymbolsAsset(assetC),
+            bundleEvent.bundleGraph.getUsedSymbolsAsset(
+              findAsset(bundleEvent.bundleGraph, 'c.js'),
+            ),
             new Set(),
           );
         } finally {

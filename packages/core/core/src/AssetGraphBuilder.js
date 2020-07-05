@@ -24,12 +24,7 @@ import EventEmitter from 'events';
 import invariant from 'assert';
 import nullthrows from 'nullthrows';
 import path from 'path';
-import {
-  md5FromObject,
-  md5FromString,
-  PromiseQueue,
-  flatMap,
-} from '@parcel/utils';
+import {md5FromObject, md5FromString, PromiseQueue} from '@parcel/utils';
 import AssetGraph from './AssetGraph';
 import RequestTracker, {RequestGraph} from './RequestTracker';
 import {PARCEL_VERSION} from './constants';
@@ -185,7 +180,9 @@ export default class AssetGraphBuilder extends EventEmitter {
       throw errors[0]; // TODO: eventually support multiple errors since requests could reject in parallel
     }
 
-    this.singleBfs((assetNode, incomingDeps, outgoingDeps) => {
+    this.topologicalBfs((assetNode, incomingDeps, outgoingDeps) => {
+      let hasDirtyOutgoingDep = false;
+
       // exportSymbol -> identifier
       let assetSymbols = assetNode.value.symbols;
       // identifier -> exportSymbol
@@ -259,6 +256,7 @@ export default class AssetGraphBuilder extends EventEmitter {
       // ----------------------------------------------------------
 
       for (let dep of outgoingDeps) {
+        let depUsedSymbolsDownOld = dep.usedSymbolsDown;
         dep.usedSymbolsDown = new Set();
         if (
           // For entries, we still need to add dep.value.symbols of the entry (which are "used" but not according to the symbols data)
@@ -307,19 +305,24 @@ export default class AssetGraphBuilder extends EventEmitter {
             }
           }
 
-          // console.log(2, {
-          //   from: assetNode.value.filePath,
-          //   to: dep.value.moduleSpecifier,
-          //   dirty: dep.usedSymbolsDownDirty,
-          //   old: [...depUsedSymbolsDownOld]
-          //     .filter(([, v]) => v.size > 0)
-          //     .map(([k, v]) => [k, ...v]),
-          //   new: [...dep.usedSymbolsDown]
-          //     .filter(([, v]) => v.size > 0)
-          //     .map(([k, v]) => [k, ...v]),
-          // });
+          if (!equalSet(depUsedSymbolsDownOld, dep.usedSymbolsDown))
+            hasDirtyOutgoingDep = true;
         }
+
+        // console.log(2, {
+        //   from: assetNode.value.filePath,
+        //   to: dep.value.moduleSpecifier,
+        //   dirty: dep.usedSymbolsDownDirty,
+        //   old: [...depUsedSymbolsDownOld]
+        //     .filter(([, v]) => v.size > 0)
+        //     .map(([k, v]) => [k, ...v]),
+        //   new: [...dep.usedSymbolsDown]
+        //     .filter(([, v]) => v.size > 0)
+        //     .map(([k, v]) => [k, ...v]),
+        // });
       }
+
+      return hasDirtyOutgoingDep;
     });
 
     this.dfsPostorder((node, incomingDeps, outgoingDeps) => {
@@ -370,8 +373,6 @@ export default class AssetGraphBuilder extends EventEmitter {
       }
     });
 
-    // console.log({visitedCountDown, visitedCountUp, deferredCount});
-
     dumpToGraphViz(this.assetGraph, 'AssetGraph');
     // $FlowFixMe Added in Flow 0.121.0 upgrade in #4381
     dumpToGraphViz(this.requestGraph, 'RequestGraph');
@@ -381,12 +382,12 @@ export default class AssetGraphBuilder extends EventEmitter {
     return {assetGraph: this.assetGraph, changedAssets: changedAssets};
   }
 
-  singleBfs(
+  topologicalBfs(
     visit: (
       node: AssetNode,
       incoming: $ReadOnlyArray<DependencyNode>,
       outgoing: $ReadOnlyArray<DependencyNode>,
-    ) => void,
+    ) => boolean,
   ) {
     let root = this.assetGraph.getRootNode();
     if (!root) {
@@ -395,33 +396,58 @@ export default class AssetGraphBuilder extends EventEmitter {
 
     let queue: Array<AssetGraphNode> = [root];
     let visited = new Set<AssetGraphNode>([root]);
+    let skipped = new Set<AssetGraphNode>();
 
     while (queue.length > 0) {
       let node = queue.shift();
       let outgoing = this.assetGraph.getNodesConnectedFrom(node);
-      if (node.type === 'asset_group') {
-        if (
-          this.assetGraph.getNodesConnectedTo(node).some(d => !visited.has(d))
-        ) {
-          // only visit assetgroup once all incoming dependencies were visited
-          continue;
-        }
-      }
-      if (node.type === 'asset') {
-        let assetGroups = this.assetGraph.getNodesConnectedTo(node);
-        if (assetGroups.some(d => !visited.has(d))) {
-          // only visit asset once all incoming asset groups were visited
-          continue;
+      if (
+        node.type !== 'dependency' &&
+        this.assetGraph.getNodesConnectedTo(node).some(d => !visited.has(d))
+      ) {
+        // only visit node once all parents were visited, it will be visited again later by the last parent
+        skipped.add(node);
+      } else {
+        if (node.type === 'asset') {
+          visit(
+            node,
+            this.assetGraph.getIncomingDependencies(node.value).map(d => {
+              let dep = this.assetGraph.getNode(d.id);
+              invariant(dep && dep.type === 'dependency');
+              return dep;
+            }),
+            outgoing.map(dep => {
+              invariant(dep.type === 'dependency');
+              return dep;
+            }),
+          );
         }
 
-        visit(
+        visited.add(node);
+        skipped.delete(node);
+        for (let child of outgoing) {
+          if (!visited.has(child)) {
+            queue.push(child);
+          }
+        }
+      }
+    }
+
+    // circular dependencies
+    queue = [...skipped];
+    let dirty = new Set();
+    while (queue.length > 0) {
+      let node = queue.shift();
+      let outgoing = this.assetGraph.getNodesConnectedFrom(node);
+      let hasDirtyOutgoingDep = false;
+      if (node.type === 'asset') {
+        hasDirtyOutgoingDep = visit(
           node,
-          flatMap(assetGroups, a => this.assetGraph.getNodesConnectedTo(a))
-            .filter(d => d.type === 'dependency')
-            .map(d => {
-              invariant(d.type === 'dependency');
-              return d;
-            }),
+          this.assetGraph.getIncomingDependencies(node.value).map(d => {
+            let dep = this.assetGraph.getNode(d.id);
+            invariant(dep && dep.type === 'dependency');
+            return dep;
+          }),
           outgoing.map(dep => {
             invariant(dep.type === 'dependency');
             return dep;
@@ -430,23 +456,20 @@ export default class AssetGraphBuilder extends EventEmitter {
       }
 
       visited.add(node);
+      let forceVisitChildren =
+        (node.type !== 'asset' && dirty.has(node)) || hasDirtyOutgoingDep;
       for (let child of outgoing) {
-        if (!visited.has(child)) {
+        if (forceVisitChildren) dirty.add(child);
+        if (forceVisitChildren || !visited.has(child)) {
           queue.push(child);
         }
       }
+      dirty.delete(node);
     }
-
-    return null;
   }
 
   dfsPostorder(
-    // preorder: (
-    //   node: AssetNode,
-    //   incoming: $ReadOnlyArray<DependencyNode>,
-    //   outgoing: $ReadOnlyArray<DependencyNode>,
-    // ) => void,
-    postorder: (
+    visit: (
       node: AssetNode,
       incoming: $ReadOnlyArray<DependencyNode>,
       outgoing: $ReadOnlyArray<DependencyNode>,
@@ -459,29 +482,26 @@ export default class AssetGraphBuilder extends EventEmitter {
 
     let visited = new Set([root.id]);
     const walk = (node: AssetGraphNode) => {
-      let incoming, outgoing;
-      if (node.type === 'asset') {
-        incoming = this.assetGraph
-          .getIncomingDependencies(node.value)
-          .map(d => {
-            let n = this.assetGraph.getNode(d.id);
-            invariant(n && n.type === 'dependency');
-            return n;
-          });
-        outgoing = this.assetGraph.getNodesConnectedFrom(node).map(dep => {
-          invariant(dep.type === 'dependency');
-          return dep;
-        });
-        // preorder(node, incoming, outgoing);
-      }
+      let outgoing = this.assetGraph.getNodesConnectedFrom(node);
       for (let child of this.assetGraph.getNodesConnectedFrom(node)) {
         if (!visited.has(child.id)) {
           visited.add(child.id);
           walk(child);
         }
       }
-      if (node.type === 'asset' && incoming && outgoing) {
-        postorder(node, incoming, outgoing);
+      if (node.type === 'asset') {
+        visit(
+          node,
+          this.assetGraph.getIncomingDependencies(node.value).map(d => {
+            let n = this.assetGraph.getNode(d.id);
+            invariant(n && n.type === 'dependency');
+            return n;
+          }),
+          outgoing.map(dep => {
+            invariant(dep.type === 'dependency');
+            return dep;
+          }),
+        );
       }
     };
     walk(root);
@@ -671,4 +691,8 @@ export default class AssetGraphBuilder extends EventEmitter {
       opts,
     );
   }
+}
+
+function equalSet<T>(a: $ReadOnlySet<T>, b: $ReadOnlySet<T>) {
+  return a.size === b.size && [...a].every(i => b.has(i));
 }
