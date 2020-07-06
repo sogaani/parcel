@@ -179,6 +179,24 @@ export default class AssetGraphBuilder extends EventEmitter {
     if (errors.length) {
       throw errors[0]; // TODO: eventually support multiple errors since requests could reject in parallel
     }
+
+    this.propagateSymbols();
+
+    dumpToGraphViz(this.assetGraph, 'AssetGraph');
+
+    // if (symbolsErrors.length > 0) {
+    // throw new ThrowableDiagnostic({diagnostic: symbolsErrors});
+    // }
+
+    // $FlowFixMe Added in Flow 0.121.0 upgrade in #4381
+    dumpToGraphViz(this.requestGraph, 'RequestGraph');
+
+    let changedAssets = this.changedAssets;
+    this.changedAssets = new Map();
+    return {assetGraph: this.assetGraph, changedAssets: changedAssets};
+  }
+
+  propagateSymbols() {
     this.propagateSymbolsDown((assetNode, incomingDeps, outgoingDeps) => {
       let hasDirtyOutgoingDep = false;
 
@@ -413,19 +431,6 @@ export default class AssetGraphBuilder extends EventEmitter {
         }
       }
     });
-
-    dumpToGraphViz(this.assetGraph, 'AssetGraph');
-
-    // if (symbolsErrors.length > 0) {
-    // throw new ThrowableDiagnostic({diagnostic: symbolsErrors});
-    // }
-
-    // $FlowFixMe Added in Flow 0.121.0 upgrade in #4381
-    dumpToGraphViz(this.requestGraph, 'RequestGraph');
-
-    let changedAssets = this.changedAssets;
-    this.changedAssets = new Map();
-    return {assetGraph: this.assetGraph, changedAssets: changedAssets};
   }
 
   propagateSymbolsDown(
