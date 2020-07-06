@@ -606,6 +606,23 @@ describe('scope hoisting', function() {
       assert.deepEqual(output, 'foobar');
     });
 
+    it('supports requiring a re-exported and renamed ES6 import', async function() {
+      let b = await bundle(
+        path.join(
+          __dirname,
+          '/integration/scope-hoisting/es6/re-export-renamed-namespace/a.js',
+        ),
+      );
+
+      assert.deepEqual(
+        b.getUsedSymbolsDependency(findDependency(b, 'a.js', './b.js')),
+        new Set(['default', 'x']),
+      );
+
+      let output = await run(b);
+      assert.deepEqual(output, [123, 123]);
+    });
+
     it('supports simultaneous import and re-export of a symbol', async function() {
       let b = await bundle(
         path.join(

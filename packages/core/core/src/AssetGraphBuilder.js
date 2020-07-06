@@ -179,8 +179,7 @@ export default class AssetGraphBuilder extends EventEmitter {
     if (errors.length) {
       throw errors[0]; // TODO: eventually support multiple errors since requests could reject in parallel
     }
-
-    this.topologicalBfs((assetNode, incomingDeps, outgoingDeps) => {
+    this.propagateSymbolsDown((assetNode, incomingDeps, outgoingDeps) => {
       let hasDirtyOutgoingDep = false;
 
       // exportSymbol -> identifier
@@ -259,6 +258,7 @@ export default class AssetGraphBuilder extends EventEmitter {
         let depUsedSymbolsDownOld = dep.usedSymbolsDown;
         dep.usedSymbolsDown = new Set();
         if (
+          assetNode.value.sideEffects || // <-- TODO add this back
           // For entries, we still need to add dep.value.symbols of the entry (which are "used" but not according to the symbols data)
           isEntry ||
           // If not a single asset is used, we can say the entire subgraph is not used.
@@ -325,58 +325,101 @@ export default class AssetGraphBuilder extends EventEmitter {
       return hasDirtyOutgoingDep;
     });
 
-    this.dfsPostorder((node, incomingDeps, outgoingDeps) => {
-      let assetSymbols = node.value.symbols;
+    this.propagateSymbolsUp((assetNode, incomingDeps, outgoingDeps) => {
+      let assetSymbols = assetNode.value.symbols;
 
       if (!assetSymbols) {
         for (let dep of incomingDeps) {
-          dep.usedSymbolsUp = new Set(node.usedSymbols);
+          dep.usedSymbolsUp = new Set(assetNode.usedSymbols);
         }
       } else {
         let assetSymbolsInverse = new Map(
           [...assetSymbols].map(([key, val]) => [val.local, key]),
         );
 
-        let reexportedSymbols = new Set<string>();
+        let reexportedSymbols = new Set<Symbol>();
         for (let outgoingDep of outgoingDeps) {
           let outgoingDepSymbols = outgoingDep.value.symbols;
           if (!outgoingDepSymbols) continue;
 
           if (outgoingDepSymbols.get('*')?.local === '*') {
             outgoingDep.usedSymbolsUp.forEach(s => reexportedSymbols.add(s));
-          } else {
-            for (let s of outgoingDep.usedSymbolsUp) {
-              if (!outgoingDep.usedSymbolsDown.has(s)) {
-                // usedSymbolsDown is a superset of usedSymbolsUp
-                continue;
-              }
+          }
 
-              let reexported = assetSymbolsInverse.get(
-                nullthrows(outgoingDepSymbols.get(s), s).local,
-              );
-              if (reexported != null) {
-                reexportedSymbols.add(reexported);
-              }
+          for (let s of outgoingDep.usedSymbolsUp) {
+            if (!outgoingDep.usedSymbolsDown.has(s)) {
+              // usedSymbolsDown is a superset of usedSymbolsUp
+              continue;
+            }
+
+            let local = outgoingDepSymbols.get(s)?.local;
+            if (local == null) {
+              // Caused by '*' => '*', already handledn
+              continue;
+            }
+
+            let reexported = assetSymbolsInverse.get(local);
+            if (reexported != null) {
+              reexportedSymbols.add(reexported);
             }
           }
         }
 
         for (let incomingDep of incomingDeps) {
           incomingDep.usedSymbolsUp = new Set();
+          let incomingDepSymbols = incomingDep.value.symbols;
+          if (!incomingDepSymbols) continue;
+
+          // let hasNamespaceReexport =
+          // incomingDepSymbols.get('*')?.local === '*';
           for (let s of incomingDep.usedSymbolsDown) {
             if (
-              node.usedSymbols.has(s) ||
+              assetNode.usedSymbols.has(s) ||
               reexportedSymbols.has(s) ||
               s === '*'
             ) {
               incomingDep.usedSymbolsUp.add(s);
             }
+
+            // else if (!hasNamespaceReexport) {
+            //   let loc = incomingDep.value.symbols?.get(s)?.loc;
+            //   let [resolution] = this.assetGraph.getNodesConnectedFrom(
+            //     incomingDep,
+            //   );
+            //   invariant(resolution && resolution.type === 'asset_group');
+            //   // $FlowFixMe calm down
+            //   errors.push({
+            //     message: `${escapeMarkdown(
+            //       path.relative(
+            //         this.options.inputFS.cwd(),
+            //         resolution.value.filePath,
+            //       ),
+            //     )} does not export '${s}'`,
+            //     origin: '@parcel/core',
+            //     filePath: loc?.filePath,
+            //     codeFrame: loc
+            //       ? {
+            //           codeHighlights: [
+            //             {
+            //               start: loc.start,
+            //               end: loc.end,
+            //             },
+            //           ],
+            //         }
+            //       : undefined,
+            //   });
+            // }
           }
         }
       }
     });
 
     dumpToGraphViz(this.assetGraph, 'AssetGraph');
+
+    // if (symbolsErrors.length > 0) {
+    // throw new ThrowableDiagnostic({diagnostic: symbolsErrors});
+    // }
+
     // $FlowFixMe Added in Flow 0.121.0 upgrade in #4381
     dumpToGraphViz(this.requestGraph, 'RequestGraph');
 
@@ -385,7 +428,7 @@ export default class AssetGraphBuilder extends EventEmitter {
     return {assetGraph: this.assetGraph, changedAssets: changedAssets};
   }
 
-  topologicalBfs(
+  propagateSymbolsDown(
     visit: (
       node: AssetNode,
       incoming: $ReadOnlyArray<DependencyNode>,
@@ -401,6 +444,7 @@ export default class AssetGraphBuilder extends EventEmitter {
     let visited = new Set<AssetGraphNode>([root]);
     let skipped = new Set<AssetGraphNode>();
 
+    // First do a topological BFS to prevent cascading updates...
     while (queue.length > 0) {
       let node = queue.shift();
       let outgoing = this.assetGraph.getNodesConnectedFrom(node);
@@ -408,7 +452,7 @@ export default class AssetGraphBuilder extends EventEmitter {
         node.type !== 'dependency' &&
         this.assetGraph.getNodesConnectedTo(node).some(d => !visited.has(d))
       ) {
-        // only visit node once all parents were visited, it will be visited again later by the last parent
+        // ... by visiting nodes once all parents were visited, it will be visited again later by the last parent
         skipped.add(node);
       } else {
         if (node.type === 'asset') {
@@ -436,7 +480,8 @@ export default class AssetGraphBuilder extends EventEmitter {
       }
     }
 
-    // circular dependencies
+    // For dependency circles in the graph, all nodes in the circle are skipped, so now
+    // traverse remaining and just accept we have to do cascading updates if something changed.
     queue = [...skipped];
     let dirty = new Set();
     while (queue.length > 0) {
@@ -471,13 +516,14 @@ export default class AssetGraphBuilder extends EventEmitter {
     }
   }
 
-  dfsPostorder(
+  propagateSymbolsUp(
     visit: (
       node: AssetNode,
       incoming: $ReadOnlyArray<DependencyNode>,
       outgoing: $ReadOnlyArray<DependencyNode>,
     ) => void,
-  ) {
+  ): void {
+    // postorder DFS
     let root = this.assetGraph.getRootNode();
     if (!root) {
       throw new Error('A root node is required to traverse');
