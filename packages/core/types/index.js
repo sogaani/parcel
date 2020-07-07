@@ -634,7 +634,7 @@ export type CreateBundleOpts =
 export type SymbolResolution = {|
   +asset: Asset,
   +exportSymbol: Symbol | string,
-  +symbol: void | null | Symbol,
+  +symbol: void | null | false | Symbol,
   // the location of the specifier that lead to this result
   +loc: ?SourceLocation,
 |};
@@ -717,7 +717,7 @@ export interface BundleGraph<TBundle: Bundle> {
     | {|type: 'bundle_group', value: BundleGroup|}
     | {|type: 'asset', value: Asset|}
   );
-  isDependencyDeferred(dependency: Dependency): boolean;
+  isDependencySkipped(dependency: Dependency): boolean;
   getDependencyResolution(dependency: Dependency, bundle: ?Bundle): ?Asset;
   getReferencedBundle(dependency: Dependency, bundle: Bundle): ?TBundle;
   findBundlesWithAsset(Asset): Array<TBundle>;
@@ -732,6 +732,7 @@ export interface BundleGraph<TBundle: Bundle> {
    * stopping at the first asset after leaving `bundle`.
    * `symbol === null`: bailout (== caller should do `asset.exports[exportsSymbol]`)
    * `symbol === undefined`: symbol not found
+   * `symbol === false`: skipped
    */
   resolveSymbol(
     asset: Asset,

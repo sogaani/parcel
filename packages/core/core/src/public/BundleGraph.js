@@ -65,10 +65,8 @@ export default class BundleGraph<TBundle: IBundle>
     return assetFromValue(this.#graph.getAssetById(id), this.#options);
   }
 
-  isDependencyDeferred(dep: IDependency): boolean {
-    return this.#graph.isDependencyDeferred(
-      dependencyToInternalDependency(dep),
-    );
+  isDependencySkipped(dep: IDependency): boolean {
+    return this.#graph.isDependencySkipped(dependencyToInternalDependency(dep));
   }
 
   getDependencyResolution(dep: IDependency, bundle: ?IBundle): ?IAsset {

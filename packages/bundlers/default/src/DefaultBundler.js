@@ -4,7 +4,6 @@ import type {
   Asset,
   Bundle,
   BundleGroup,
-  Dependency,
   MutableBundleGraph,
   PluginOptions,
 } from '@parcel/types';
@@ -31,18 +30,18 @@ const HTTP_OPTIONS = {
   },
 };
 
-function shouldSkipDependencySubgraph(
-  bundleGraph: MutableBundleGraph,
-  dep: Dependency,
-) {
-  if (
-    !dep.symbols.isCleared &&
-    bundleGraph.getUsedSymbolsDependency(dep).size === 0
-  ) {
-    let assetGroup = bundleGraph.getDependencyResolution(dep);
-    return assetGroup && assetGroup.sideEffects === false;
-  }
-}
+// function shouldSkipDependencySubgraph(
+//   bundleGraph: MutableBundleGraph,
+//   dep: Dependency,
+// ) {
+//   if (
+//     !dep.symbols.isCleared &&
+//     bundleGraph.getUsedSymbolsDependency(dep).size === 0
+//   ) {
+//     let assetGroup = bundleGraph.getDependencyResolution(dep);
+//     return assetGroup && assetGroup.sideEffects === false;
+//   }
+// }
 
 export default new Bundler({
   // RULES:
@@ -80,16 +79,8 @@ export default new Bundler({
         let assets = bundleGraph.getDependencyAssets(dependency);
         let resolution = bundleGraph.getDependencyResolution(dependency);
 
-        if (shouldSkipDependencySubgraph(bundleGraph, node.value)) {
+        if (bundleGraph.isDependencySkipped(node.value)) {
           actions.skipChildren();
-          if (resolution) {
-            bundleGraph.removeAssetGraphFromBundle(
-              resolution,
-              nullthrows(
-                nullthrows(context?.bundleByType).get(resolution.type),
-              ),
-            );
-          }
           return;
         }
 
@@ -324,7 +315,7 @@ export default new Bundler({
       |},
     > = new Map();
 
-    bundleGraph.traverseContents((node, ctx, actions) => {
+    bundleGraph.traverse((node, ctx, actions) => {
       if (node.type !== 'asset') {
         return;
       }
@@ -461,7 +452,7 @@ export default new Bundler({
     // the bundle and the bundle group providing that asset. If all connections
     // to that bundle group are removed, remove that bundle group.
     let asyncBundleGroups: Set<BundleGroup> = new Set();
-    bundleGraph.traverse((node, _, actions) => {
+    bundleGraph.traverseContents((node, _, actions) => {
       if (
         node.type !== 'dependency' ||
         node.value.isEntry ||
@@ -470,7 +461,7 @@ export default new Bundler({
         return;
       }
 
-      if (shouldSkipDependencySubgraph(bundleGraph, node.value)) {
+      if (bundleGraph.isDependencySkipped(node.value)) {
         actions.skipChildren();
         return;
       }
