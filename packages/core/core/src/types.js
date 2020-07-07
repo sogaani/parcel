@@ -201,8 +201,7 @@ export type DependencyNode = {|
   correspondingRequest?: string,
   deferred: boolean,
   hasDeferred?: boolean,
-  usedSymbolsDown: Set<Symbol>,
-  usedSymbolsUp: Set<Symbol>,
+  usedSymbols: Set<Symbol>,
   excluded: boolean,
 |};
 
