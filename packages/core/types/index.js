@@ -282,6 +282,9 @@ export interface MutableAssetSymbols extends AssetSymbols {
   clear(): void;
   set(exportSymbol: Symbol, local: Symbol, loc: ?SourceLocation): void;
 }
+/**
+ * isWeak means: the symbol is not used by the parent asset itself and is merely reexported
+ */
 export interface MutableDependencySymbols // eslint-disable-next-line no-undef
   extends Iterable<
     [Symbol, {|local: Symbol, loc: ?SourceLocation, isWeak: boolean|}],
@@ -336,7 +339,7 @@ export interface Dependency {
   +pipeline: ?string;
 
   // TODO make immutable
-  // (imported symbol -> variable that it is used as)
+  /** imported symbol -> variable that it is used as */
   +symbols: MutableDependencySymbols;
 }
 
