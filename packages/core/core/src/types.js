@@ -126,7 +126,7 @@ export type Asset = {|
   publicId: ?string,
   astKey: ?string,
   astGenerator: ?ASTGenerator,
-  symbols: ?Map<Symbol, {|local: Symbol, loc: ?SourceLocation|}>,
+  symbols: Map<Symbol, {|local: Symbol, loc: ?SourceLocation|}>,
   sideEffects: boolean,
   uniqueKey: ?string,
   configPath?: FilePath,
