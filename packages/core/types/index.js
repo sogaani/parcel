@@ -391,7 +391,6 @@ export interface MutableAsset extends BaseAsset {
 }
 
 export interface Asset extends BaseAsset {
-  +publicId: string;
   +stats: Stats;
 }
 
@@ -679,6 +678,7 @@ export interface MutableBundleGraph extends BundleGraph<Bundle> {
 
 export interface BundleGraph<TBundle: Bundle> {
   getAssetById(id: string): Asset;
+  getAssetPublicId(asset: Asset): string;
   getBundles(): Array<TBundle>;
   getBundleGroupsContainingBundle(bundle: Bundle): Array<BundleGroup>;
   getBundlesInBundleGroup(bundleGroup: BundleGroup): Array<TBundle>;
