@@ -325,14 +325,14 @@ export function generateExports(
     },
   });
 
-  // invariant(
-  //   exportedIdentifiers.size === 0,
-  //   [...exportedIdentifiers.keys()].join(', '),
-  // );
-
   if (exportedIdentifiers.size > 0) {
     let declarations = [];
     let exportedIdentifiersSpecifiers = [];
+    // `export { $id$init().foo as foo};` is not valid, so instead do:
+    // ```
+    // let syntheticExport$foo = $id$init().foo;
+    // export { syntheticExport$foo as foo};
+    // ```
     for (let [exportAs, symbol] of exportedIdentifiers) {
       declarations.push(
         t.variableDeclarator(
